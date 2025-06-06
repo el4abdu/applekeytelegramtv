@@ -4,4 +4,6 @@ webdriver-manager==3.8.6
 requests==2.31.0
 pymongo==4.3.3
 python-dotenv==1.0.0
-schedule==1.2.0 
+schedule==1.2.0
+urllib3==1.26.15
+six==1.16.0 
