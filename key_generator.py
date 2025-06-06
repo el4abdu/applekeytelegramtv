@@ -21,18 +21,34 @@ class KeyGenerator:
         self.is_generating = False
         self.generation_thread = None
         self.scheduled_job = None
+        self.generation_start_time = None
         
         # Start initial key generation
         logger.info("Starting initial key generation")
         self.start_background_generation(count=DEFAULT_KEYS_TO_GENERATE)
     
+    def check_generation_timeout(self):
+        """Check if key generation has timed out"""
+        if self.is_generating and self.generation_start_time:
+            elapsed_time = time.time() - self.generation_start_time
+            # If generation has been running for more than 5 minutes, reset the flag
+            if elapsed_time > 300:  # 5 minutes timeout
+                logger.warning(f"Key generation timed out after {elapsed_time:.1f} seconds, resetting flag")
+                self.is_generating = False
+                return True
+        return False
+    
     def generate_keys(self, count=DEFAULT_KEYS_TO_GENERATE):
         """Generate Apple TV keys and store them in the database"""
+        # Check for timeout before checking is_generating flag
+        self.check_generation_timeout()
+        
         if self.is_generating:
             logger.info("Key generation already in progress")
             return False, "Key generation already in progress"
         
         self.is_generating = True
+        self.generation_start_time = time.time()
         keys_generated = []
         
         try:
@@ -51,9 +67,13 @@ class KeyGenerator:
             return False, f"Error generating keys: {str(e)}"
         finally:
             self.is_generating = False
+            self.generation_start_time = None
     
     def start_background_generation(self, count=DEFAULT_KEYS_TO_GENERATE):
         """Start key generation in a background thread"""
+        # Check for timeout before checking is_generating flag
+        self.check_generation_timeout()
+        
         if self.is_generating:
             logger.info("Key generation already in progress")
             return False, "Key generation already in progress"
@@ -82,6 +102,9 @@ class KeyGenerator:
             return False, "Key generation already scheduled"
         
         def scheduled_task():
+            # Check for timeout before checking is_generating flag
+            self.check_generation_timeout()
+            
             if not self.is_generating:
                 logger.info("Running scheduled key generation")
                 self.start_background_generation(count)
@@ -114,8 +137,21 @@ class KeyGenerator:
         logger.info("Stopped scheduled key generation")
         return True, "Stopped scheduled key generation"
     
+    def force_generate(self, count=DEFAULT_KEYS_TO_GENERATE):
+        """Force key generation even if another generation is in progress"""
+        # Reset the is_generating flag
+        logger.info("Forcing key generation")
+        self.is_generating = False
+        self.generation_start_time = None
+        
+        # Start a new generation
+        return self.start_background_generation(count)
+    
     def get_key_stats(self):
         """Get statistics about available keys"""
+        # Check for timeout before returning stats
+        generation_timed_out = self.check_generation_timeout()
+        
         unused_count = self.db.get_key_count(used=False)
         used_count = self.db.get_key_count(used=True)
         total_count = unused_count + used_count
@@ -125,7 +161,8 @@ class KeyGenerator:
             "total": total_count,
             "unused": unused_count,
             "used": used_count,
-            "is_generating": self.is_generating
+            "is_generating": self.is_generating,
+            "generation_timed_out": generation_timed_out
         }
     
     def get_keys(self, count=1, mark_as_used=True):

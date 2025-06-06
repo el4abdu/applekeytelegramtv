@@ -28,8 +28,10 @@ class TelegramBot:
         self.dispatcher.add_handler(CommandHandler("getkeys", self.get_keys_command))
         self.dispatcher.add_handler(CommandHandler("stock", self.stock_command))
         self.dispatcher.add_handler(CommandHandler("generate", self.generate_command))
+        self.dispatcher.add_handler(CommandHandler("forcegen", self.force_generate_command))
         self.dispatcher.add_handler(CommandHandler("startgen", self.start_gen_command))
         self.dispatcher.add_handler(CommandHandler("stopgen", self.stop_gen_command))
+        self.dispatcher.add_handler(CommandHandler("status", self.status_command))
         
         # Add error handler
         self.dispatcher.add_error_handler(self.error_handler)
@@ -51,8 +53,10 @@ class TelegramBot:
             "/getkeys <count> - Get multiple keys (max 10)\n"
             "/stock - Check available keys in stock\n"
             "/generate <count> - Generate keys in background\n"
+            "/forcegen <count> - Force key generation (bypasses 'already in progress')\n"
             "/startgen - Start automatic key generation\n"
             "/stopgen - Stop automatic key generation\n"
+            "/status - Show detailed bot status\n"
             "/help - Show this help message"
         )
         update.message.reply_text(help_text)
@@ -90,6 +94,8 @@ class TelegramBot:
         stats = self.key_generator.get_key_stats()
         
         status = "🟢 Active" if stats["is_generating"] else "🔴 Inactive"
+        if stats.get("generation_timed_out", False):
+            status += " (timed out)"
         
         stock_text = (
             f"🔑 *Apple TV Keys Stock*\n\n"
@@ -119,6 +125,24 @@ class TelegramBot:
         except ValueError:
             update.message.reply_text("Please provide a valid number.")
     
+    def force_generate_command(self, update: Update, context: CallbackContext):
+        """Handle the /forcegen command"""
+        try:
+            count = DEFAULT_KEYS_TO_GENERATE
+            if context.args:
+                count = int(context.args[0])
+                count = min(count, MAX_KEYS_PER_REQUEST)
+            
+            success, message = self.key_generator.force_generate(count=count)
+            
+            if success:
+                update.message.reply_text(f"✅ Force generation started: {message}")
+            else:
+                update.message.reply_text(f"❌ {message}")
+        
+        except ValueError:
+            update.message.reply_text("Please provide a valid number.")
+    
     def start_gen_command(self, update: Update, context: CallbackContext):
         """Handle the /startgen command"""
         success, message = self.key_generator.schedule_generation()
@@ -136,6 +160,25 @@ class TelegramBot:
             update.message.reply_text(f"✅ {message}")
         else:
             update.message.reply_text(f"❌ {message}")
+    
+    def status_command(self, update: Update, context: CallbackContext):
+        """Handle the /status command"""
+        stats = self.key_generator.get_key_stats()
+        
+        status_text = (
+            f"🤖 *Bot Status*\n\n"
+            f"Available Keys: *{stats['unused']}*\n"
+            f"Used Keys: *{stats['used']}*\n"
+            f"Total Keys: *{stats['total']}*\n\n"
+            f"Generation Active: *{'Yes' if stats['is_generating'] else 'No'}*\n"
+            f"Generation Timed Out: *{'Yes' if stats.get('generation_timed_out', False) else 'No'}*\n"
+            f"Automatic Generation: *{'Active' if self.key_generator.scheduled_job else 'Inactive'}*\n\n"
+            f"*Commands:*\n"
+            f"/forcegen - Force start key generation\n"
+            f"/stock - Check key stock"
+        )
+        
+        update.message.reply_text(status_text, parse_mode=ParseMode.MARKDOWN)
     
     def error_handler(self, update: Update, context: CallbackContext):
         """Handle errors"""

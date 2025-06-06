@@ -63,51 +63,47 @@ class BrowserManager:
         options.add_argument("--disable-cookies")
         options.add_argument("--disable-blink-features=AutomationControlled")
         
-        # First try: Use undetected-chromedriver which works with latest Chrome
-        try:
-            logger.info("Attempting to create browser with undetected-chromedriver")
-            os.system("pip install -U undetected-chromedriver")
-            import undetected_chromedriver as uc
-            
-            driver = uc.Chrome(options=options)
-            logger.info("Successfully created browser with undetected-chromedriver")
-            return driver
-        except Exception as e:
-            logger.error(f"Error creating browser with undetected-chromedriver: {e}")
-            
-            # Second try: Use Selenium Manager to get the latest ChromeDriver
+        # Try different approaches to create a browser
+        for attempt in range(3):
             try:
-                logger.info("Attempting to create browser with Selenium Manager")
-                # Make sure Chrome is up to date
-                self.update_chrome()
+                logger.info(f"Browser creation attempt {attempt+1}/3")
                 
-                # Use Selenium's built-in ChromeDriver manager
-                chrome_options = ChromeOptions()
-                for arg in options.arguments:
-                    chrome_options.add_argument(arg)
-                
-                driver = webdriver.Chrome(options=chrome_options)
-                logger.info("Successfully created browser with Selenium Manager")
-                return driver
-            except Exception as e2:
-                logger.error(f"Error creating browser with Selenium Manager: {e2}")
-                
-                # Third try: Use webdriver-manager
-                try:
-                    logger.info("Attempting to create browser with webdriver-manager")
-                    from webdriver_manager.chrome import ChromeDriverManager
-                    from webdriver_manager.core.os_manager import ChromeType
+                if attempt == 0:
+                    # First try: Use undetected-chromedriver
+                    logger.info("Attempting to create browser with undetected-chromedriver")
+                    try:
+                        import undetected_chromedriver as uc
+                    except ImportError:
+                        os.system("pip install -U undetected-chromedriver")
+                        import undetected_chromedriver as uc
                     
-                    os.system("pip install -U webdriver-manager")
-                    
-                    service = Service(ChromeDriverManager(chrome_type=ChromeType.GOOGLE).install())
-                    driver = webdriver.Chrome(service=service, options=options)
-                    logger.info("Successfully created browser with webdriver-manager")
+                    driver = uc.Chrome(options=options)
+                    logger.info("Successfully created browser with undetected-chromedriver")
                     return driver
-                except Exception as e3:
-                    logger.error(f"Error using webdriver-manager: {e3}")
-                    logger.error("Could not create browser instance")
-                    return None
+                
+                elif attempt == 1:
+                    # Second try: Use Selenium Manager
+                    logger.info("Attempting to create browser with Selenium Manager")
+                    chrome_options = ChromeOptions()
+                    for arg in options.arguments:
+                        chrome_options.add_argument(arg)
+                    
+                    driver = webdriver.Chrome(options=chrome_options)
+                    logger.info("Successfully created browser with Selenium Manager")
+                    return driver
+                
+                else:
+                    # Third try: Use a simple approach
+                    logger.info("Attempting to create browser with basic Chrome")
+                    driver = webdriver.Chrome()
+                    logger.info("Successfully created browser with basic Chrome")
+                    return driver
+            
+            except Exception as e:
+                logger.error(f"Error in browser creation attempt {attempt+1}: {e}")
+        
+        logger.error("All browser creation attempts failed")
+        return None
     
     def extract_key_from_url(self, url):
         """Extract the Apple TV key from the URL"""
@@ -128,13 +124,25 @@ class BrowserManager:
         browser = self.browsers[browser_index]
         logger.info(f"Generating key with browser {browser_index}")
         
+        # Set a timeout for the entire key generation process
+        start_time = time.time()
+        timeout = 60  # 60 seconds timeout
+        
         try:
             logger.info(f"Navigating to {REDEEM_URL}")
             browser.get(REDEEM_URL)
             
+            # Take screenshot for debugging
+            try:
+                screenshot_path = f"browser_{browser_index}_before_click.png"
+                browser.save_screenshot(screenshot_path)
+                logger.info(f"Saved screenshot to {screenshot_path}")
+            except Exception as e:
+                logger.error(f"Error saving screenshot: {e}")
+            
             # Wait for the button to be clickable
             logger.info(f"Waiting for button to be clickable: {BUTTON_XPATH}")
-            button = WebDriverWait(browser, 30).until(
+            button = WebDriverWait(browser, 20).until(
                 EC.element_to_be_clickable((By.XPATH, BUTTON_XPATH))
             )
             logger.info("Button found, clicking")
@@ -142,7 +150,7 @@ class BrowserManager:
             
             # Wait for URL to change
             logger.info("Waiting for URL to change")
-            WebDriverWait(browser, 30).until(
+            WebDriverWait(browser, 20).until(
                 lambda driver: "code=" in driver.current_url
             )
             
@@ -160,8 +168,26 @@ class BrowserManager:
         
         except Exception as e:
             logger.error(f"Error generating key with browser {browser_index}: {e}")
+            
+            # Take screenshot for debugging
+            try:
+                screenshot_path = f"browser_{browser_index}_error.png"
+                browser.save_screenshot(screenshot_path)
+                logger.info(f"Saved error screenshot to {screenshot_path}")
+            except Exception as e:
+                logger.error(f"Error saving error screenshot: {e}")
+            
+            # Check if timeout occurred
+            if time.time() - start_time > timeout:
+                logger.error(f"Key generation timed out after {timeout} seconds")
+            
             # Recreate browser instance if there's an error
             logger.info(f"Recreating browser {browser_index}")
+            try:
+                browser.quit()
+            except:
+                pass
+            
             new_browser = self.create_browser()
             if new_browser:
                 self.browsers[browser_index] = new_browser
@@ -176,9 +202,22 @@ class BrowserManager:
         
         if len(self.browsers) == 0:
             logger.error("No browsers available for key generation")
-            return keys
+            # Try to initialize browsers again
+            logger.info("Attempting to reinitialize browsers")
+            self.initialize_browsers()
+            if len(self.browsers) == 0:
+                return keys
+        
+        # Set a timeout for the entire key generation process
+        start_time = time.time()
+        timeout = 300  # 5 minutes timeout
         
         while len(keys) < count and len(self.browsers) > 0:
+            # Check if timeout occurred
+            if time.time() - start_time > timeout:
+                logger.error(f"Key generation batch timed out after {timeout} seconds")
+                break
+            
             key = self.generate_key(browser_index)
             if key:
                 logger.info(f"Successfully generated key: {key}")
@@ -190,7 +229,7 @@ class BrowserManager:
             browser_index = (browser_index + 1) % len(self.browsers)
             
             # Small delay to prevent rate limiting
-            time.sleep(1)
+            time.sleep(2)
         
         logger.info(f"Generated {len(keys)} keys")
         return keys
