@@ -6,7 +6,7 @@ import subprocess
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from config import HEADLESS, USER_AGENTS, REDEEM_URL, BUTTON_XPATH
@@ -26,7 +26,7 @@ class BrowserManager:
     
     def create_browser(self):
         """Create a new browser instance with random user agent"""
-        options = Options()
+        options = ChromeOptions()
         if HEADLESS:
             options.add_argument("--headless=new")
         
@@ -53,9 +53,8 @@ class BrowserManager:
             # Try using Selenium Manager
             try:
                 from selenium.webdriver.chrome.service import Service as ChromeService
-                from selenium.webdriver.chrome.options import Options
                 
-                chrome_options = Options()
+                chrome_options = ChromeOptions()
                 for arg in options.arguments:
                     chrome_options.add_argument(arg)
                 
