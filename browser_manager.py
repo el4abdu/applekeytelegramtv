@@ -24,6 +24,17 @@ class BrowserManager:
             if browser:
                 self.browsers.append(browser)
     
+    def update_chrome(self):
+        """Update Chrome to the latest version"""
+        try:
+            print("Updating Chrome to the latest version...")
+            os.system("sudo apt-get update")
+            os.system("sudo apt-get install -y google-chrome-stable")
+            return True
+        except Exception as e:
+            print(f"Error updating Chrome: {e}")
+            return False
+    
     def create_browser(self):
         """Create a new browser instance with random user agent"""
         options = ChromeOptions()
@@ -40,9 +51,9 @@ class BrowserManager:
         options.add_argument("--disable-cookies")
         options.add_argument("--disable-blink-features=AutomationControlled")
         
-        # Install undetected-chromedriver
+        # First try: Use undetected-chromedriver which works with latest Chrome
         try:
-            os.system("pip install undetected-chromedriver")
+            os.system("pip install -U undetected-chromedriver")
             import undetected_chromedriver as uc
             
             driver = uc.Chrome(options=options)
@@ -50,36 +61,33 @@ class BrowserManager:
         except Exception as e:
             print(f"Error creating browser with undetected-chromedriver: {e}")
             
-            # Try using Selenium Manager
+            # Second try: Use Selenium Manager to get the latest ChromeDriver
             try:
-                from selenium.webdriver.chrome.service import Service as ChromeService
+                # Make sure Chrome is up to date
+                self.update_chrome()
                 
+                # Use Selenium's built-in ChromeDriver manager
                 chrome_options = ChromeOptions()
                 for arg in options.arguments:
                     chrome_options.add_argument(arg)
                 
-                # Use selenium-manager to find proper driver
                 driver = webdriver.Chrome(options=chrome_options)
                 return driver
             except Exception as e2:
                 print(f"Error creating browser with Selenium Manager: {e2}")
                 
-                # Try with a specific older Chrome version
+                # Third try: Use webdriver-manager
                 try:
-                    # Try to downgrade Chrome and install matching driver
-                    print("Attempting to install older Chrome version...")
-                    os.system("sudo apt-get install -y wget gnupg")
-                    os.system("wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -")
-                    os.system("echo 'deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main' | sudo tee /etc/apt/sources.list.d/google-chrome.list")
-                    os.system("sudo apt-get update")
-                    os.system("sudo apt-get install -y google-chrome-stable=114.0.5735.198-1")
-                    os.system("sudo apt-mark hold google-chrome-stable")
+                    from webdriver_manager.chrome import ChromeDriverManager
+                    from webdriver_manager.core.os_manager import ChromeType
                     
-                    # Now try again with the downgraded Chrome
-                    driver = webdriver.Chrome(options=options)
+                    os.system("pip install -U webdriver-manager")
+                    
+                    service = Service(ChromeDriverManager(chrome_type=ChromeType.GOOGLE).install())
+                    driver = webdriver.Chrome(service=service, options=options)
                     return driver
                 except Exception as e3:
-                    print(f"Error after attempting Chrome downgrade: {e3}")
+                    print(f"Error using webdriver-manager: {e3}")
                     return None
     
     def extract_key_from_url(self, url):
