@@ -8,6 +8,7 @@ load_dotenv()
 TELEGRAM_TOKEN = "8118589511:AAFHleVFkF-3kiLtpyxxSUfOxdsuMkoak48"
 
 # Database Configuration
+USE_MONGODB = os.getenv("USE_MONGODB", "false").lower() == "true"
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017/")
 DB_NAME = "apple_tv_keys"
 KEYS_COLLECTION = "keys"
