@@ -1,13 +1,14 @@
 import random
 import re
 import time
+import os
+import subprocess
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
 from config import HEADLESS, USER_AGENTS, REDEEM_URL, BUTTON_XPATH
 
 class BrowserManager:
@@ -19,13 +20,50 @@ class BrowserManager:
     def initialize_browsers(self):
         """Initialize the browser instances"""
         for _ in range(self.max_browsers):
-            self.browsers.append(self.create_browser())
+            browser = self.create_browser()
+            if browser:
+                self.browsers.append(browser)
+    
+    def get_chrome_version(self):
+        """Get the installed Chrome version"""
+        try:
+            # Try to get Chrome version
+            process = subprocess.Popen(
+                ['google-chrome', '--version'],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            stdout, _ = process.communicate()
+            version = stdout.decode('utf-8').strip().split()[-1]
+            major_version = version.split('.')[0]
+            return major_version
+        except:
+            return None
+    
+    def download_compatible_chromedriver(self):
+        """Download a compatible ChromeDriver"""
+        try:
+            chrome_version = self.get_chrome_version()
+            if not chrome_version:
+                return False
+                
+            print(f"Detected Chrome version: {chrome_version}")
+            
+            # Download latest ChromeDriver for this version
+            os.system(f"wget -q -O /tmp/chromedriver_linux64.zip https://chromedriver.storage.googleapis.com/LATEST_RELEASE_{chrome_version}")
+            os.system("unzip -o /tmp/chromedriver_linux64.zip -d /tmp/")
+            os.system("chmod +x /tmp/chromedriver")
+            
+            return True
+        except Exception as e:
+            print(f"Error downloading ChromeDriver: {e}")
+            return False
     
     def create_browser(self):
         """Create a new browser instance with random user agent"""
         options = Options()
         if HEADLESS:
-            options.add_argument("--headless")
+            options.add_argument("--headless=new")
         
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
@@ -34,25 +72,27 @@ class BrowserManager:
         options.add_argument("--disable-extensions")
         options.add_argument("--disable-notifications")
         options.add_argument("--incognito")
-        
-        # Disable cookies
         options.add_argument("--disable-cookies")
+        options.add_argument("--disable-blink-features=AutomationControlled")
         
         try:
-            # Try with specific ChromeDriver version
-            driver = webdriver.Chrome(service=Service(ChromeDriverManager(version="114.0.5735.90").install()), options=options)
+            # Try to use the system ChromeDriver
+            driver = webdriver.Chrome(options=options)
+            return driver
         except Exception as e:
-            print(f"Error creating browser with ChromeDriverManager: {e}")
-            try:
-                # Fallback to direct Chrome options
-                options.add_argument("--disable-blink-features=AutomationControlled")
-                driver = webdriver.Chrome(options=options)
-            except Exception as e2:
-                print(f"Error creating browser with direct Chrome options: {e2}")
-                # Last resort - try with system installed chromedriver
-                driver = webdriver.Chrome(options=options)
-        
-        return driver
+            print(f"Error creating browser with system ChromeDriver: {e}")
+            
+            # Try to download compatible ChromeDriver
+            if self.download_compatible_chromedriver():
+                try:
+                    service = Service(executable_path="/tmp/chromedriver")
+                    driver = webdriver.Chrome(service=service, options=options)
+                    return driver
+                except Exception as e2:
+                    print(f"Error creating browser with downloaded ChromeDriver: {e2}")
+            
+            print("Could not create browser instance")
+            return None
     
     def extract_key_from_url(self, url):
         """Extract the Apple TV key from the URL"""
@@ -95,7 +135,9 @@ class BrowserManager:
         except Exception as e:
             print(f"Error generating key with browser {browser_index}: {e}")
             # Recreate browser instance if there's an error
-            self.browsers[browser_index] = self.create_browser()
+            new_browser = self.create_browser()
+            if new_browser:
+                self.browsers[browser_index] = new_browser
             return None
     
     def generate_keys(self, count=1):
@@ -103,7 +145,7 @@ class BrowserManager:
         keys = []
         browser_index = 0
         
-        while len(keys) < count:
+        while len(keys) < count and len(self.browsers) > 0:
             key = self.generate_key(browser_index)
             if key:
                 keys.append(key)
