@@ -24,41 +24,6 @@ class BrowserManager:
             if browser:
                 self.browsers.append(browser)
     
-    def get_chrome_version(self):
-        """Get the installed Chrome version"""
-        try:
-            # Try to get Chrome version
-            process = subprocess.Popen(
-                ['google-chrome', '--version'],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
-            stdout, _ = process.communicate()
-            version = stdout.decode('utf-8').strip().split()[-1]
-            major_version = version.split('.')[0]
-            return major_version
-        except:
-            return None
-    
-    def download_compatible_chromedriver(self):
-        """Download a compatible ChromeDriver"""
-        try:
-            chrome_version = self.get_chrome_version()
-            if not chrome_version:
-                return False
-                
-            print(f"Detected Chrome version: {chrome_version}")
-            
-            # Download latest ChromeDriver for this version
-            os.system(f"wget -q -O /tmp/chromedriver_linux64.zip https://chromedriver.storage.googleapis.com/LATEST_RELEASE_{chrome_version}")
-            os.system("unzip -o /tmp/chromedriver_linux64.zip -d /tmp/")
-            os.system("chmod +x /tmp/chromedriver")
-            
-            return True
-        except Exception as e:
-            print(f"Error downloading ChromeDriver: {e}")
-            return False
-    
     def create_browser(self):
         """Create a new browser instance with random user agent"""
         options = Options()
@@ -75,24 +40,48 @@ class BrowserManager:
         options.add_argument("--disable-cookies")
         options.add_argument("--disable-blink-features=AutomationControlled")
         
+        # Install undetected-chromedriver
         try:
-            # Try to use the system ChromeDriver
-            driver = webdriver.Chrome(options=options)
+            os.system("pip install undetected-chromedriver")
+            import undetected_chromedriver as uc
+            
+            driver = uc.Chrome(options=options)
             return driver
         except Exception as e:
-            print(f"Error creating browser with system ChromeDriver: {e}")
+            print(f"Error creating browser with undetected-chromedriver: {e}")
             
-            # Try to download compatible ChromeDriver
-            if self.download_compatible_chromedriver():
+            # Try using Selenium Manager
+            try:
+                from selenium.webdriver.chrome.service import Service as ChromeService
+                from selenium.webdriver.chrome.options import Options
+                
+                chrome_options = Options()
+                for arg in options.arguments:
+                    chrome_options.add_argument(arg)
+                
+                # Use selenium-manager to find proper driver
+                driver = webdriver.Chrome(options=chrome_options)
+                return driver
+            except Exception as e2:
+                print(f"Error creating browser with Selenium Manager: {e2}")
+                
+                # Try with a specific older Chrome version
                 try:
-                    service = Service(executable_path="/tmp/chromedriver")
-                    driver = webdriver.Chrome(service=service, options=options)
+                    # Try to downgrade Chrome and install matching driver
+                    print("Attempting to install older Chrome version...")
+                    os.system("sudo apt-get install -y wget gnupg")
+                    os.system("wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -")
+                    os.system("echo 'deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main' | sudo tee /etc/apt/sources.list.d/google-chrome.list")
+                    os.system("sudo apt-get update")
+                    os.system("sudo apt-get install -y google-chrome-stable=114.0.5735.198-1")
+                    os.system("sudo apt-mark hold google-chrome-stable")
+                    
+                    # Now try again with the downgraded Chrome
+                    driver = webdriver.Chrome(options=options)
                     return driver
-                except Exception as e2:
-                    print(f"Error creating browser with downloaded ChromeDriver: {e2}")
-            
-            print("Could not create browser instance")
-            return None
+                except Exception as e3:
+                    print(f"Error after attempting Chrome downgrade: {e3}")
+                    return None
     
     def extract_key_from_url(self, url):
         """Extract the Apple TV key from the URL"""
