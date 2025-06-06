@@ -1,0 +1,31 @@
+version: '3'
+
+services:
+  mongodb:
+    image: mongo:latest
+    container_name: apple_tv_keys_mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    restart: always
+    networks:
+      - app_network
+
+  bot:
+    build: .
+    container_name: apple_tv_keys_bot
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017/
+    depends_on:
+      - mongodb
+    restart: always
+    networks:
+      - app_network
+
+networks:
+  app_network:
+    driver: bridge
+
+volumes:
+  mongodb_data: 
