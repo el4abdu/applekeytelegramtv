@@ -38,7 +38,20 @@ class BrowserManager:
         # Disable cookies
         options.add_argument("--disable-cookies")
         
-        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+        try:
+            # Try with specific ChromeDriver version
+            driver = webdriver.Chrome(service=Service(ChromeDriverManager(version="114.0.5735.90").install()), options=options)
+        except Exception as e:
+            print(f"Error creating browser with ChromeDriverManager: {e}")
+            try:
+                # Fallback to direct Chrome options
+                options.add_argument("--disable-blink-features=AutomationControlled")
+                driver = webdriver.Chrome(options=options)
+            except Exception as e2:
+                print(f"Error creating browser with direct Chrome options: {e2}")
+                # Last resort - try with system installed chromedriver
+                driver = webdriver.Chrome(options=options)
+        
         return driver
     
     def extract_key_from_url(self, url):
